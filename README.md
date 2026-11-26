@@ -62,15 +62,15 @@ En ⚙ Ajustes → Sistema verás qué encoders QSV están disponibles o por qu�
 ## Seguridad
 
 La app **no tiene login**. Por eso el compose publica el puerto solo en `127.0.0.1`. Para usarla desde otro equipo,
-ponla detrás de un proxy inverso con autenticación (y quita `ports:`). Los POST exigen `Sec-Fetch-Site: same-origin`.
+ponla detrás de un proxy inverso con autenticación (y quita `ports:`). Los POST que el navegador marca como de otro sitio (`Sec-Fetch-Site`) se rechazan.
 
 ## Desarrollo
 
 ```sh
 git clone https://github.com/Adrian-Gonzalez-E/encodelab.git && cd encodelab
-docker compose build
-docker run --rm ghcr.io/adrian-gonzalez-e/encodelab:latest python3 -m pytest -q -p no:cacheprovider tests
-app/e2e/run.sh [directorio de capturas]   # pruebas de interfaz con Playwright
+docker build -t ghcr.io/adrian-gonzalez-e/encodelab:dev app
+docker run --rm -u 1000:1000 ghcr.io/adrian-gonzalez-e/encodelab:dev python3 -m pytest -q -p no:cacheprovider tests
+app/e2e/run.sh [directorio de capturas]   # pruebas de interfaz con Playwright (usa la imagen :dev)
 ```
 
 Hoja de ruta: más encoders como módulos (NVENC, VAAPI/AMD) e interfaz en inglés.

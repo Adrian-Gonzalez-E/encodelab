@@ -109,19 +109,30 @@ def test_detect_qsv_ok_and_partial(tmp_path, monkeypatch):
     monkeypatch.setattr(media.subprocess, "run", fake)
     assert media.detect_qsv(str(dev)) == (["hevc_qsv"], "av1_qsv: Current resolution is unsupported")
     cmd, kw = seen[0]
-    assert f"vaapi=va:{dev}" in cmd and "qsv=hw@va" in cmd and kw.get("timeout") == 15
+    assert f"vaapi=va:{dev}" in cmd and "qsv=hw@va" in cmd and kw.get("timeout") == 8
 
 
 def test_detect_qsv_timeout(tmp_path, monkeypatch):
     dev = tmp_path / "renderD128"
     dev.touch()
     def boom(cmd, **kw):
-        raise subprocess.TimeoutExpired(cmd, 15)
+        raise subprocess.TimeoutExpired(cmd, 8)
     monkeypatch.setattr(media.subprocess, "run", boom)
     ok, reason = media.detect_qsv(str(dev))
-    assert ok == [] and "15 s" in reason
+    assert ok == [] and "8 s" in reason
 
 
 def test_available_encoders():
     assert media.available_encoders([]) == ["libsvtav1", "libx265"]
     assert media.available_encoders(["hevc_qsv"]) == ["libsvtav1", "libx265", "hevc_qsv"]
+
+
+def test_detect_qsv_without_permission(tmp_path, monkeypatch):
+    dev = tmp_path / "renderD128"
+    dev.touch()
+    monkeypatch.setattr(media.os, "access", lambda path, mode: False)
+    def never(cmd, **kw):
+        raise AssertionError("no debe lanzar ffmpeg sin permiso: aborta y deja core dumps")
+    monkeypatch.setattr(media.subprocess, "run", never)
+    ok, reason = media.detect_qsv(str(dev))
+    assert ok == [] and reason.startswith(f"sin permiso en {dev}") and "RENDER_GID" in reason

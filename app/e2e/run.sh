@@ -4,6 +4,7 @@
 set -u
 cd "$(dirname "$0")/../.."
 export MEDIA_PATH=${MEDIA_PATH:-/tmp}  # el fixture no usa medios reales
+export ENCODELAB_TAG=${ENCODELAB_TAG:-dev}  # imagen local: docker build -t ghcr.io/adrian-gonzalez-e/encodelab:dev app
 OUT=${1:-/tmp/encodelab-e2e}; mkdir -p "$OUT"; chmod 777 "$OUT"; rm -f "$OUT"/*.png
 docker rm -f encodelab-e2e >/dev/null 2>&1
 docker compose run -d --rm --no-deps --name encodelab-e2e encodelab python3 -m e2e.fixture_server >/dev/null 2>&1

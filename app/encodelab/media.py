@@ -44,9 +44,9 @@ def _qsv_try(device: str, encoder: str) -> str | None:
     cmd = ["ffmpeg", "-hide_banner", "-nostdin", *qsv_args(device), "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.04",
            "-frames:v", "1", "-c:v", encoder, "-f", "null", "-"]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
     except subprocess.TimeoutExpired:
-        return "ffmpeg no respondió en 15 s"
+        return "ffmpeg no respondió en 8 s"
     except OSError as e:
         return str(e)
     if r.returncode == 0:
@@ -59,6 +59,10 @@ def detect_qsv(device: str = QSV_DEVICE) -> tuple[list[str], str]:
     """Encoders QSV que funcionan en `device` y un resumen legible ("ok" o los motivos de los que no)."""
     if not Path(device).exists():
         return [], f"sin dispositivo {device}"
+    # Sin permiso, el ffmpeg estático aborta (core dump) al intentar X11: se evita lanzarlo.
+    if not os.access(device, os.R_OK | os.W_OK):
+        return [], (f"sin permiso en {device} (uid {os.getuid()}, grupos {os.getgroups()}): "
+                    "añade RENDER_GID en .env y usa compose.qsv.yaml")
     ok, failed = [], []
     for name in (n for n, e in ENCODERS.items() if e["qsv"]):
         reason = _qsv_try(device, name)

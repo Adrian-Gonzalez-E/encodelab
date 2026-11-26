@@ -4,7 +4,6 @@
 services:
   encodelab:
     image: ghcr.io/adrian-gonzalez-e/encodelab:${ENCODELAB_TAG:-latest}
-    build: ./app
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
