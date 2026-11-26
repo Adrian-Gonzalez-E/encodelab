@@ -4,6 +4,7 @@ __pycache__/
 .superpowers/
 .env
 .env.*
+!.env.example
 *.db
 *.db-*
 *.log
