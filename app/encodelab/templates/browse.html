@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Elegir capítulo</h1>
+<p class="path"><code>/{{ "" if here == "." else here }}</code></p>
+<p class="hint">Solo se listan MKV y MP4. Los .ts/.m2ts hay que remuxarlos antes a MKV (mkvtoolnix).</p>
+<ul class="listing">
+  {% if parent is not none %}<li><a href="{{ url_for('browse', path=parent) }}">↑ Subir</a></li>{% endif %}
+  {% for name, rel in dirs %}<li class="dir"><a href="{{ url_for('browse', path=rel) }}">{{ name }}/</a></li>{% endfor %}
+  {% for name, rel in videos %}<li class="video"><a href="{{ url_for('new', file=rel) }}">{{ name }}</a></li>{% endfor %}
+  {% if not dirs and not videos %}<li>Carpeta vacía.</li>{% endif %}
+</ul>
+{% endblock %}

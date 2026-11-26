@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import test_row, tests_table, tests_toggle, batch_panel, chart_svg, info, saving with context %}
+
+{% macro scene_title(s) %}{{ s.source_path.rsplit('/', 1)[-1] }} · {{ s.start_s|hms }}–{{ (s.start_s + s.duration_s)|hms }}{% endmacro %}
+{% macro role_chip(s) %}<span class="chip role role-{{ s.role or 'manual' }}">{{ s.role or "manual" }}</span>{% endmacro %}
+
+{# Opción de la paleta; en un grupo el rol y el tramo sustituyen al nombre del archivo, que ya va en la cabecera. #}
+{% macro scene_option(s, grouped) %}
+<a role="option" id="opt-{{ s.batch_id }}" href="{{ url_for('results', escena=s.batch_id, sort=sort) }}" data-search="{{ s.source_path }} {{ s.start_s|hms }}–{{ (s.start_s + s.duration_s)|hms }}{% if grouped %} grupo {{ s.role or 'manual' }}{% endif %}"{% if s.batch_id == scene.batch_id %} aria-current="true"{% endif %}>
+  {% if grouped %}
+  <span class="pname">{{ role_chip(s) }} <b>{{ s.start_s|hms }}–{{ (s.start_s + s.duration_s)|hms }}</b></span>
+  <small>{{ s.n_tests }} prueba{{ "s" if s.n_tests != 1 }}{% if s.best_ratio is not none %} · mejor ahorro {{ saving(s.best_ratio) }}{% endif %}</small>
+  {% else %}
+  <span class="pname">🎬 <b>{{ s.source_path.rsplit('/', 1)[-1] }}</b> · {{ s.start_s|hms }}–{{ (s.start_s + s.duration_s)|hms }}</span>
+  <small>{{ s.source_path.rsplit('/', 1)[0] if '/' in s.source_path else '' }} · {{ s.n_tests }} prueba{{ "s" if s.n_tests != 1 }}{% if s.best_ratio is not none %} · mejor ahorro {{ saving(s.best_ratio) }}{% endif %} · {{ s.created_at[:10] }}</small>
+  {% endif %}
+</a>
+{% endmacro %}
+
+{% block live %} data-live{% endblock %}
+
+{% block scenebar %}
+{{ tests_toggle() }}
+{% if scene %}
+<button type="button" class="scene-pick" id="scene-pick" popovertarget="scenes" data-swap aria-label="Cambiar de escena (Ctrl+K)">
+  <span class="t"><b>🎬 {{ scene_title(scene) }}</b></span>
+  {% if siblings %}{{ role_chip(scene) }}{% endif %}
+  <kbd>⌘K</kbd>
+</button>
+{% if siblings %}
+<nav class="scene-sibs" id="scene-sibs" data-swap aria-label="Tramos del mismo grupo">
+  <span class="lbl">Grupo</span>
+  {% for s in siblings %}<a class="chip role role-{{ s.role or 'manual' }}" href="{{ url_for('results', escena=s.batch_id, sort=sort) }}" title="{{ s.start_s|hms }}–{{ (s.start_s + s.duration_s)|hms }}"{% if s.batch_id == scene.batch_id %} aria-current="page"{% endif %}>{{ s.role or "manual" }}</a>{% endfor %}
+  <a class="sum" href="{{ url_for('group', group_id=scene.group_id) }}">Resumen ›</a>
+</nav>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block sortbutton %}
+{% if scenes %}<button type="button" class="ico" popovertarget="sorts" title="Ordenar" aria-label="Ordenar">⇅</button>{% endif %}
+{% endblock %}
+
+{% block plusitems %}
+{% if scene %}
+<a href="{{ url_for('new', file=scene.source_path, start=scene.start_s, duration=scene.duration_s) }}">＋ Añadir pruebas a esta escena<small>mismo archivo y tramo: se juntan en esta gráfica</small></a>
+{% endif %}
+{% endblock %}
+
+{% block popovers %}
+{% if scenes %}
+<div id="scenes" popover class="palette" data-swap>
+  <input type="search" class="palette-input" placeholder="Buscar escena…" aria-label="Buscar escena" autocomplete="off" autofocus
+    role="combobox" aria-expanded="true" aria-controls="scene-list" aria-autocomplete="list">
+  <p class="palette-count" aria-live="polite" data-groups="{{ sections|length }}">{{ scenes|length }} escena{{ "s" if scenes|length != 1 }}{% if sections %} · {{ sections|length }} grupo{{ "s" if sections|length != 1 }}{% endif %}</p>
+  <div role="listbox" class="palette-list" id="scene-list">
+  {% for grp, items in sections %}
+  <div role="group" class="pgroup" aria-labelledby="pg-{{ grp.id }}">
+    <div class="pghead"><b id="pg-{{ grp.id }}">Grupo · {{ grp.created_at[8:10] }}-{{ grp.created_at[5:7] }} {{ grp.created_at[11:16] }}</b>
+      <span>{{ grp.source_path.rsplit('/', 1)[-1] }} · {{ items|length }} tramo{{ "s" if items|length != 1 }}</span>
+      <a href="{{ url_for('group', group_id=grp.id) }}">Resumen ›</a></div>
+    {% for s in items %}{{ scene_option(s, true) }}{% endfor %}
+  </div>
+  {% endfor %}
+  {% if loose %}
+  <div role="group" class="pgroup loose" {% if sections %}aria-labelledby="pg-sueltas"{% else %}aria-label="Escenas"{% endif %}>
+    {% if sections %}<div class="pghead"><b id="pg-sueltas">Sueltas</b></div>{% endif %}
+    {% for s in loose %}{{ scene_option(s, false) }}{% endfor %}
+  </div>
+  {% endif %}
+  </div>
+  <p class="palette-empty" aria-live="polite" hidden>Ninguna escena coincide.</p>
+  <p class="palette-help">↑↓ moverse · ↵ abrir · Esc cerrar</p>
+</div>
+<div id="sorts" popover class="menu">
+  <h4>Ordenar tarjetas</h4>
+  {% for key, label in [("id", "Fecha"), ("vmaf_mean", "VMAF"), ("vmaf_p5", "VMAF p5"), ("ratio", "Ahorro"), ("enc_fps", "Velocidad")] %}
+  <a href="{{ url_for('results', escena=scene.batch_id, sort=key) }}"{% if sort == key %} aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block main %}
+{% set here = request.full_path.rstrip('?') %}
+{% if not scenes %}
+<section class="empty glass"><h1>Aún no hay pruebas.</h1><p><a class="btn" href="{{ url_for('browse') }}">Nueva batería</a></p></section>
+{% else %}
+<section class="view-panel">
+  <section class="scene-sheet glass" id="sheet">
+    <header>
+      <h1>{{ sheet.title }}</h1><span class="chip tramo">{{ sheet.tramo }}</span>
+      <a class="btn" href="{{ url_for('new', file=scene.source_path, start=scene.start_s, duration=scene.duration_s) }}">＋ Añadir pruebas</a>
+      {% if sheet.group_id %}<a class="btn" href="{{ url_for('group', group_id=sheet.group_id) }}">Σ Resumen entre tramos</a>{% endif %}
+      {% if scene_has_frames(scene.source_path, scene.start_s, scene.duration_s) %}<a class="btn" href="{{ url_for('comparar', escena=scene.batch_id) }}">▨ Comparar visualmente</a>{% endif %}
+    </header>
+    <div class="facts">{% for f in sheet.facts %}<span class="chip">{{ f }}</span>{% endfor %}</div>
+    <div class="figures">
+      <span><small>Pruebas</small> <b>{{ scene.n_done }} hecha{{ "s" if scene.n_done != 1 }}</b>{% if scene.n_pending %} <small>({{ scene.n_pending }} en cola)</small>{% endif %}</span>
+      <span><small>Mejor ahorro ≥ {{ best_vmaf }} {{ info("vmaf_mean") }}</small> {% if sheet.best_saving %}<b class="hot">{{ saving(sheet.best_saving.ratio) }}</b> <small>{{ sheet.best_saving.encoder }} {{ sheet.best_saving.quality }}·{{ sheet.best_saving.preset }}</small>{% else %}<b>ninguna ≥ {{ best_vmaf }}</b>{% endif %}</span>
+      <span><small>Mejor VMAF</small> {% if sheet.best_vmaf %}<b class="hot">{{ sheet.best_vmaf.vmaf_mean|n(2) }}</b> <small>{{ sheet.best_vmaf.encoder }} {{ sheet.best_vmaf.quality }}·{{ sheet.best_vmaf.preset }}</small>{% else %}<b>–</b>{% endif %}</span>
+      <span><small>Más rápida</small> {% if sheet.fastest %}<b class="hot">{{ sheet.fastest.enc_fps|n(0) }} fps</b> <small>{{ sheet.fastest.encoder }} {{ sheet.fastest.quality }}·{{ sheet.fastest.preset }}</small>{% else %}<b>–</b>{% endif %}</span>
+    </div>
+  </section>
+  {% if chart %}{{ chart_svg(chart) }}{% else %}<p class="empty-chart glass">Sin pruebas terminadas en esta escena.</p>{% endif %}
+  <div class="tlist">
+    {% for t in tests %}{{ test_row(t, here) }}{% endfor %}
+  </div>
+  <div class="tablewrap-panel">
+    {{ tests_table(tests, best) }}
+  </div>
+</section>
+<section class="view-baterias">
+  {% for b, tests in batches %}{{ batch_panel(b, tests, loop.first, here) }}{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

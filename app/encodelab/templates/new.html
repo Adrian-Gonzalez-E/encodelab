@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block main %}
+{% set enc0 = encoders[prefs.default_encoder] %}
+<h1>Nueva batería</h1>
+<p class="path"><code>{{ file }}</code></p>
+{% if same_scene_tests %}
+<p class="notice">Misma escena que {{ same_scene_tests }} pruebas: los resultados se juntan en su gráfica.</p>
+{% endif %}
+<div class="kpis">
+  <div class="kpi glass"><small>Codec</small><b>{{ info.codec }}</b><span>{{ info.pix_fmt }}</span></div>
+  <div class="kpi glass"><small>Resolución</small><b>{{ info.width }}×{{ info.height }}</b><span>{{ info.fps|n(3) }} fps</span></div>
+  <div class="kpi glass"><small>Campo</small><b>{{ "entrelazada" if info.interlaced else "progresiva" }}</b><span>{{ info.field_order }}</span></div>
+  <div class="kpi glass"><small>Duración</small><b>{{ info.duration_s|hms }}</b><span>h:mm:ss</span></div>
+  <div class="kpi glass"><small>Vídeo en el tramo</small><b>{{ kbps|n(0) }}</b><span>kbps</span></div>
+</div>
+{% if info.interlaced %}
+<p class="notice error">Fuente entrelazada: EncodeLab no la desentrelaza; las métricas no serán fiables.</p>
+{% endif %}
+<form method="post" action="{{ url_for('create_batch') }}" class="batch-form">
+  <input type="hidden" name="file" value="{{ file }}">
+  <div class="tramo-mode wide" data-tramo-mode hidden>
+    <div class="seg tramo-seg" data-mode="manual" role="group" aria-label="Elegir el tramo">
+      <span class="seg-thumb" aria-hidden="true"></span>
+      <button type="button" data-tramo="manual" aria-pressed="true">Tramo manual</button>
+      <button type="button" data-tramo="auto" aria-pressed="false">Tramos automáticos</button>
+    </div>
+  </div>
+  <section class="auto-panel glass wide" data-auto-panel data-analysis-url="{{ url_for('start_analysis') }}" hidden>
+    <div class="auto-head">
+      <label>Tramos <input type="number" min="1" max="5" value="{{ prefs.auto_tramos }}" data-auto-n></label>
+      <button type="button" class="btn" data-auto-run>Analizar vídeo</button>
+    </div>
+    <p class="hint" data-auto-msg>Busca tramos exigentes, representativos, oscuros, con detalle y con movimiento. La primera vez tarda unos minutos; el perfil del vídeo queda en caché.</p>
+    <div class="bar progress" data-auto-bar hidden><i style="--w: 0%"></i></div>
+    <div class="proposals" data-proposals></div>
+  </section>
+  <p class="hint" data-manual-only>Elige una escena exigente: oscura, con grano o mucho movimiento.</p>
+  <label data-manual-only>Inicio (h:mm:ss) <input type="text" name="start" value="{{ start|hms }}" inputmode="decimal" required></label>
+  <label>Duración (h:mm:ss) <input type="text" name="duration" value="{{ duration|hms }}" inputmode="decimal" required>
+    <small class="hint">entre 0:00:02 y 0:02:00 · también vale en segundos</small></label>
+
+  <label class="wide">Encoder
+    <select name="encoder">
+      {% for name, e in encoders.items() %}
+      <option value="{{ name }}"{% if name == prefs.default_encoder %} selected{% endif %}
+        data-quality-default="{{ e.quality.default }}" data-preset-default="{{ e.preset.default }}"
+        data-extras-default="{{ prefs['extras_' ~ name] }}"
+        data-quality-hint="{{ e.quality.flag }} {{ e.quality.range }} · empieza en {{ e.quality.start }} · {{ e.quality.hint }}"
+        data-preset-hint="Preset {{ e.preset.range }} · típico {{ e.preset.start }} · {{ e.preset.hint }}"
+        data-extras-hint="{{ e.extras_hint }}">{{ e.title }} · {{ e.codec }} · {{ e.engine }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="enc-info wide">
+    {% for name, e in encoders.items() %}
+    <div class="enc-card glass" data-enc-info="{{ name }}"{% if name != prefs.default_encoder %} hidden{% endif %}>
+      {# Los medidores van primero y con columnas fijas: al cambiar de encoder no se mueven y se comparan a ojo. #}
+      <div class="meter">
+        {% for label, key in [("Compresión", "compresion"), ("Velocidad", "velocidad"), ("Compatibilidad", "compat")] %}
+        <span>{{ label }}</span><span class="track"><i style="--m: {{ e.meters[key] }}%"></i></span>
+        {% endfor %}
+      </div>
+      <div class="enc-head"><b>{{ e.title }}</b> <code>{{ name }}</code> <span class="chip {{ e.codec|lower }}">{{ e.codec }}</span> <span class="badge">{{ e.engine }}</span></div>
+      <p class="enc-text">{{ e.text }}</p>
+      <small>{{ e.quality.flag }} {{ e.quality.range }} (empieza en {{ e.quality.start }}) · preset {{ e.preset.range }} · medidores orientativos</small>
+    </div>
+    {% endfor %}
+  </div>
+
+  <label>Calidades <input type="text" name="qualities" value="{{ enc0.quality.default }}" required>
+    <small class="hint" data-hint-for="quality">{{ enc0.quality.flag }} {{ enc0.quality.range }} · empieza en {{ enc0.quality.start }} · {{ enc0.quality.hint }}</small></label>
+  <label>Presets <input type="text" name="presets" value="{{ enc0.preset.default }}" required>
+    <small class="hint" data-hint-for="preset">Preset {{ enc0.preset.range }} · típico {{ enc0.preset.start }} · {{ enc0.preset.hint }}</small></label>
+  <label class="wide">Argumentos extra <input type="text" name="extra" value="{{ prefs['extras_' ~ prefs.default_encoder] }}">
+    <small class="hint" data-hint-for="extras">{{ enc0.extras_hint }}</small></label>
+  <p class="estimate wide" data-speeds='{{ speeds|tojson }}' data-frames="{{ frames }}"></p>
+  <p class="hint wide">Máximo 24 pruebas por batería (calidades × presets). Los extras por defecto de cada encoder se cambian en ⚙ Ajustes.</p>
+  <button type="submit" data-submit>Encolar pruebas</button>
+</form>
+{% endblock %}

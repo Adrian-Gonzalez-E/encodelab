@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tests_toggle, chart_svg, info, saving with context %}
+{% block live %} data-live{% endblock %}
+{% block main %}
+<h1>Resumen entre tramos</h1>
+<p class="path"><code>{{ g.source_path }}</code> · {{ g.created_at }}</p>
+<form method="get" action="{{ url_for('groups') }}" class="group-pick">
+  <label>Grupo <select name="g" data-autosubmit>{% for x in all_groups %}<option value="{{ x.id }}"{% if x.id == g.id %} selected{% endif %}>{{ x.created_at }} · {{ x.source_path.rsplit('/', 1)[-1] }} · {{ x.n }} tramos</option>{% endfor %}</select></label>
+  <noscript><button type="submit" class="btn">Ver</button></noscript>
+</form>
+{% if pending %}<p class="notice">{{ pending }} prueba{{ "s" if pending != 1 }} en marcha o en cola: la página se actualiza sola. Solo cuentan las configuraciones terminadas en todos los tramos.</p>{% endif %}
+<section class="glass group-tramos">
+  <h2>Tramos</h2>
+  <table class="cmp"><thead><tr><th>Rol</th><th>Tramo</th><th>Original</th><th>Pruebas</th><th></th></tr></thead><tbody>
+  {% for b in batches %}
+  <tr>
+    <td><span class="chip">{{ b.role or "manual" }}</span></td>
+    <td>{{ b.start_s|hms }}–{{ (b.start_s + b.duration_s)|hms }}</td>
+    <td>{{ b.source_kbps|n(0) }} kbps</td>
+    <td>{{ b.n_done }} / {{ b.n_tests }}</td>
+    <td><a href="{{ url_for('results', escena=b.id) }}">Escena</a> · <a href="{{ url_for('batch', batch_id=b.id) }}">Batería</a>{% if scene_has_frames(b.source_path, b.start_s, b.duration_s) %} · <a href="{{ url_for('comparar', escena=b.id) }}">Comparar</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+{% if not rows %}
+<p class="empty-chart glass">Ninguna configuración está terminada en todos los tramos todavía.</p>
+{% else %}
+<p class="lead">Mejor ahorro con VMAF ≥ {{ best_vmaf }} en <b>todos</b> los tramos:
+  {% if win %}<b class="hot">{{ saving(win.ratio) }}</b> <small>{{ win.encoder }} {{ win.quality }}·{{ win.preset }}{% if win.extra_args %} {{ win.extra_args }}{% endif %}</small>{% else %}<b>ninguna</b>{% endif %}</p>
+{% if chart %}{{ chart_svg(chart) }}<p class="hint">Eje vertical: VMAF medio del peor tramo. Eje horizontal: % medio del original.</p>{% endif %}
+<div class="tablewrap">
+<table class="cmp">
+  <thead><tr><th>Configuración</th><th>VMAF medio {{ info("vmaf_mean") }}</th><th>VMAF peor tramo</th><th>p5 peor tramo {{ info("vmaf_p5") }}</th>
+    <th>Mín. peor {{ info("vmaf_min") }}</th><th>% orig. medio {{ info("ratio") }}</th><th>% orig. peor</th><th>GB/cap. {{ info("est_gb") }}</th><th>fps {{ info("enc_fps") }}</th><th>t/cap. {{ info("est_hours") }}</th><th>Args ffmpeg</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr id="t-{{ r.id }}"{% if win and r.id == win.id %} class="best"{% endif %}>
+    <td>{% if win and r.id == win.id %}★ {% endif %}{{ r.encoder }} {{ r.quality }}·{{ r.preset }}{% if r.extra_args %} <small>{{ r.extra_args }}</small>{% endif %}</td>
+    <td>{{ r.vmaf_avg|n(2) }}</td><td>{{ r.vmaf_worst|n(2) }}</td><td>{{ r.p5_worst|n(2) }}</td><td>{{ r.min_worst|n(2) }}</td>
+    <td>{{ (r.ratio * 100)|n(1) }} %</td><td>{{ (r.ratio_worst * 100)|n(1) }} %</td>
+    <td>{{ r.est_gb|n(2) }}</td><td>{{ r.enc_fps|n(1) }}</td><td>{{ (r.est_hours * 3600 if r.est_hours is not none else none)|hms }}</td>
+    <td>{% if r.ffmpeg_args %}<button type="button" class="copy" data-copy="{{ r.ffmpeg_args }}" title="Copiar argumentos">⧉</button>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

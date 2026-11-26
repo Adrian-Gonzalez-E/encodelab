@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set A = options|selectattr("key", "equalto", a)|first %}
+{% set B = options|selectattr("key", "equalto", bsel)|first %}
+{% block main %}
+<h1>Comparar</h1>
+<p class="path"><code>{{ b.source_path }}</code> · {{ b.start_s|hms }}–{{ (b.start_s + b.duration_s)|hms }}</p>
+{% if not idxs %}
+<p class="notice">Esta escena no tiene imágenes guardadas. Se guardan al terminar cada prueba si «Guardar fotogramas» está activo en ⚙ Ajustes.</p>
+{% else %}
+<form method="get" action="{{ url_for('comparar') }}" class="cmp-form glass">
+  <label>Tramo
+    <select name="escena" data-autosubmit>
+      {% for sc in scenes %}<option value="{{ sc.batch_id }}"{% if sc.source_path == b.source_path and sc.start_s == b.start_s and sc.duration_s == b.duration_s %} selected{% endif %}>{{ sc.source_path.rsplit('/', 1)[-1] }} · {{ sc.start_s|hms }}–{{ (sc.start_s + sc.duration_s)|hms }}{% if sc.role %} · {{ sc.role }}{% endif %}</option>{% endfor %}
+    </select>
+  </label>
+  <label>A <select name="a">{% for o in options %}<option value="{{ o.key }}"{% if o.key == a %} selected{% endif %}>{{ o.label }}</option>{% endfor %}</select></label>
+  <label>B <select name="b">{% for o in options %}<option value="{{ o.key }}"{% if o.key == bsel %} selected{% endif %}>{{ o.label }}</option>{% endfor %}</select></label>
+  <button type="submit" class="btn">Ver</button>
+</form>
+<nav class="cmp-frames" aria-label="Fotograma">
+  {% for i in idxs %}<a href="{{ url_for('comparar', escena=b.id, a=a, b=bsel, f=i) }}"{% if i == f %} aria-current="true"{% endif %}>{{ roles[i] or 'fotograma' }} <small>n.º {{ i }}</small></a>{% endfor %}
+</nav>
+{% set fa = A.frames.get(f) %}{% set fb = B.frames.get(f) %}
+{% if fa and fb %}
+<figure class="cmp" data-cmp data-mode="slider" data-show="b">
+  <div class="cmp-bar" role="group" aria-label="Modo de comparación">
+    <button type="button" data-mode-set="slider" aria-pressed="true">Deslizar</button>
+    <button type="button" data-mode-set="side">Lado a lado</button>
+    <button type="button" data-mode-set="flip">Alternar</button>
+    <button type="button" data-zoom="fit">Ajustar</button>
+    <button type="button" data-zoom="1">1:1</button>
+  </div>
+  <div class="cmp-stage">
+    <div class="cmp-pane cmp-a"><img src="{{ url_for('frame_image', frame_id=fa.id) }}" alt="{{ A.label }}, fotograma {{ f }}" draggable="false"><span class="cmp-tag">A · {{ A.label }}</span></div>
+    <div class="cmp-pane cmp-b"><img src="{{ url_for('frame_image', frame_id=fb.id) }}" alt="{{ B.label }}, fotograma {{ f }}" draggable="false"><span class="cmp-tag">B · {{ B.label }}</span></div>
+    <div class="cmp-handle" role="slider" tabindex="0" aria-label="Posición de la cortina" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+  </div>
+  <figcaption>
+    A <b>{{ A.label }}</b>{% if fa.vmaf is not none %} · VMAF del fotograma {{ fa.vmaf|n(1) }}{% endif %}
+    · B <b>{{ B.label }}</b>{% if fb.vmaf is not none %} · VMAF del fotograma {{ fb.vmaf|n(1) }}{% endif %}
+    <small class="hint">Rueda: zoom · arrastrar: mover · ←/→: fotograma · 1/2/3: modo · Espacio: alternar</small>
+  </figcaption>
+</figure>
+{% else %}
+<p class="notice">A o B no tienen imagen de este fotograma.</p>
+{% endif %}
+<script src="{{ url_for('static', filename='compare.js') }}" defer></script>
+{% endif %}
+{% endblock %}

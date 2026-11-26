@@ -1,0 +1,256 @@
+{% macro info(key) %}<button type="button" class="info" popovertarget="m-{{ key }}" aria-label="Qué es {{ glossary[key].name }}">i</button>{% endmacro %}
+
+{% macro metric(key, value, digits=1, suffix="") %}
+<div class="metric"><dt>{{ glossary[key].name }} {{ info(key) }}</dt><dd>{{ value|n(digits) }}{% if value is not none %}{{ suffix }}{% endif %}</dd></div>
+{% endmacro %}
+
+{% macro trash_icon() %}<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>{% endmacro %}
+
+{% macro delete_form(action, what, next) %}
+<form method="post" action="{{ action }}" class="del" data-confirm="¿Borrar {{ what }}? Se elimina de la base de datos y no se puede deshacer.">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button type="submit" class="trash" aria-label="Borrar {{ what }}" title="Borrar">{{ trash_icon() }}</button>
+</form>
+{% endmacro %}
+
+{% macro status_badge(t) %}<span class="badge {{ t.status }}">{{ {"queued": "en cola", "running": "en curso", "done": "hecha", "error": "error"}[t.status] }}</span>{% endmacro %}
+
+{% macro chip(t) %}<span class="chip {{ 'hevc' if 'x265' in t.encoder or 'hevc' in t.encoder else 'av1' }}">{{ t.encoder }}</span>{% endmacro %}
+
+{% macro saving(ratio) %}{% if ratio is none %}–{% elif ratio <= 1 %}−{{ ((1 - ratio) * 100)|n(0) }} %{% else %}+{{ ((ratio - 1) * 100)|n(0) }} %{% endif %}{% endmacro %}
+
+{% macro ring(vmaf) %}<div class="ring" style="--v: {{ vmaf if vmaf is not none else 0 }}"><span>{{ vmaf|n(1) }}</span></div>{% endmacro %}
+
+{% macro bar(kind, pct, text) %}
+<div class="barcell"><div class="bar {{ kind }}"><i style="--w: {{ [[pct or 0, 0]|max, 100]|min }}%"></i></div><small>{{ text }}</small></div>
+{% endmacro %}
+
+{% macro tests_toggle() %}<div class="seg tests-toggle" role="group" aria-label="Ver pruebas como"><span class="seg-thumb" aria-hidden="true"></span><button type="button" data-set-tests="cards">Tarjetas</button><button type="button" data-set-tests="table">Tabla</button></div>{% endmacro %}
+
+{% macro args_line(t, next) %}
+<div class="args">
+  {% if t.ffmpeg_args %}<code>{{ t.ffmpeg_args }}</code><button type="button" class="copy" data-copy="{{ t.ffmpeg_args }}">Copiar</button>
+  {% elif t.extra_args %}<code>{{ t.extra_args }}</code>{% endif %}
+  {% if t.status != "running" %}{{ delete_form(url_for('delete_test', test_id=t.id), "esta prueba (" ~ t.encoder ~ " " ~ t.quality ~ "·" ~ t.preset ~ ")", next) }}{% endif %}
+</div>
+<small class="when">{{ t.created_at }} · <a href="{{ url_for('batch', batch_id=t.batch_id) }}">Batería {{ t.batch_id }}</a></small>
+{% endmacro %}
+
+{% macro detail_grid(t) %}
+<dl class="detail-grid">
+  {{ metric("vmaf_mean", t.vmaf_mean, 2) }}{{ metric("vmaf_p5", t.vmaf_p5, 2) }}{{ metric("vmaf_min", t.vmaf_min, 2) }}{{ metric("vmaf_neg_mean", t.vmaf_neg_mean, 2) }}
+  {{ metric("psnr_y", t.psnr_y, 2) }}{{ metric("ssim", t.ssim, 4) }}{{ metric("ms_ssim", t.ms_ssim, 4) }}{{ metric("kbps", t.kbps, 0) }}
+  {{ metric("ratio", t.ratio * 100 if t.ratio is not none else none, 1, " %") }}{{ metric("est_gb", t.est_gb, 2) }}{{ metric("enc_fps", t.enc_fps, 1) }}<div class="metric"><dt>{{ glossary.est_hours.name }} {{ info("est_hours") }}</dt><dd>{{ (t.est_hours * 3600 if t.est_hours is not none else none)|hms }}</dd></div>
+</dl>
+{% endmacro %}
+
+{# Escala 50–100 (los valores útiles de VMAF viven ahí) salvo que «aceptable» baje de 60. #}
+{% macro gpos(v) %}{% set lo = 50 if settings.vmaf_warn >= 60 else 0 %}{{ [[(v - lo) / (100 - lo) * 100, 0]|max, 100]|min|round(1) }}{% endmacro %}
+
+{% macro gauge_row(key, value) %}
+<div class="grow"><span>{{ glossary[key].name }} {{ info(key) }}</span>
+  <div class="gauge" style="--warn: {{ gpos(settings.vmaf_warn) }}%; --good: {{ gpos(settings.best_vmaf) }}%">{% if value is not none %}<b style="left: {{ gpos(value) }}%"></b>{% endif %}</div>
+  <b>{{ value|n(1) }}</b></div>
+{% endmacro %}
+
+{% macro detail_gauges(t) %}
+<div class="detail-gauges">
+  {{ gauge_row("vmaf_mean", t.vmaf_mean) }}{{ gauge_row("vmaf_p5", t.vmaf_p5) }}{{ gauge_row("vmaf_neg_mean", t.vmaf_neg_mean) }}{{ gauge_row("vmaf_min", t.vmaf_min) }}
+  <div class="grow"><span>{{ glossary.ratio.name }} {{ info("ratio") }}</span>
+    <div class="bar s"><i style="--w: {{ [[(t.ratio or 0) * 100, 0]|max, 100]|min }}%"></i></div><b>{{ (t.ratio * 100 if t.ratio is not none else none)|n(0) }} %</b></div>
+  <p class="legend-text">escala {{ 50 if settings.vmaf_warn >= 60 else 0 }}–100 · rojo &lt; {{ settings.vmaf_warn }} · ámbar: aceptable desde {{ settings.vmaf_warn }} · cian: bueno desde {{ settings.best_vmaf }}</p>
+  <p class="more-figs">PSNR-Y {{ t.psnr_y|n(2) }} · SSIM {{ t.ssim|n(4) }} · MS-SSIM {{ t.ms_ssim|n(4) }} · {{ t.kbps|n(0) }} kbps · {{ t.est_gb|n(2) }} GB/cap. · {{ t.enc_fps|n(1) }} fps · {{ (t.est_hours * 3600 if t.est_hours is not none else none)|hms }} por capítulo</p>
+</div>
+{% endmacro %}
+
+{% macro thumbs_strip(t) %}
+{% set fr = thumbs_of(t.id) if t.status == "done" else [] %}
+{% if fr %}
+<div class="thumbs">
+  {% for f in fr %}<a href="{{ url_for('comparar', escena=t.batch_id, a='orig', b=t.id, f=f.idx) }}" title="Comparar el fotograma {{ f.idx }} con el original"><img loading="lazy" src="{{ url_for('frame_thumb', frame_id=f.id) }}" alt="Fotograma {{ f.idx }} de {{ t.encoder }} {{ t.quality }}·{{ t.preset }}"></a>{% endfor %}
+  <a class="btn" href="{{ url_for('comparar', escena=t.batch_id, a='orig', b=t.id) }}">Comparar con el original</a>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro test_row(t, next) %}
+<details class="trow status-{{ t.status }}" id="t-{{ t.id }}" data-id="{{ t.id }}">
+  <summary>
+    {% if t.status == "done" %}<span class="ring sm" style="--v: {{ t.vmaf_mean if t.vmaf_mean is not none else 0 }}"><span>{{ t.vmaf_mean|n(1) }}</span></span>
+    {% else %}<span class="ring sm" style="--v: 0"><span>{{ "!" if t.status == "error" else "…" }}</span></span>{% endif %}
+    {{ chip(t) }}
+    <span class="cfg">{{ t.quality }}·{{ t.preset }}{% if t.extra_args %} <small>{{ t.extra_args|truncate(24, true, "…") }}</small>{% endif %}</span>
+    {% if t.status == "done" %}<b class="saving">{{ saving(t.ratio) }}</b><span class="fps">{{ t.enc_fps|n(0) }} fps</span>
+    {% elif t.status == "running" %}<span class="mini wide" data-progress-for="{{ t.id }}"><i style="--w: {{ pct(t.progress) }}%"></i></span><b class="saving" data-progress-pct="{{ t.id }}">{{ ((t.progress or 0) * 100)|n(0) }} %</b>
+    {% elif t.status == "error" %}<b class="errtag">error</b><span></span>
+    {% else %}<span class="muted">en cola</span><span></span>{% endif %}
+  </summary>
+  <div class="tbody-detail">
+    {% if t.status == "done" %}{{ detail_gauges(t) if settings.card_style == "gauges" else detail_grid(t) }}
+    {% elif t.status == "running" %}{{ progress_block(t) }}
+    {% elif t.status == "error" %}<pre class="errtext">{{ t.error }}</pre>
+    {% else %}<p class="waiting">Esperando turno en la cola.</p>{% endif %}
+    {{ args_line(t, next) }}
+    {{ thumbs_strip(t) }}
+  </div>
+</details>
+{% endmacro %}
+
+{% macro tcell(t, best, key, digits, scale=1, suffix="", time=false) %}
+{%- set v = t[key] * scale if t[key] is not none else none -%}
+{%- set is_best = t.status == "done" and t[key] is not none and key in best and t[key] == best[key] -%}
+<td{% if is_best %} class="best"{% endif %} data-v="{{ v if v is not none else '' }}">{% if is_best %}★ {% endif %}{% if time %}{{ (v * 3600 if v is not none else none)|hms }}{% else %}{{ v|n(digits) }}{% if v is not none %}{{ suffix }}{% endif %}{% endif %}</td>
+{%- endmacro %}
+
+{% macro tests_table(tests, best) %}
+<div class="tablewrap">
+<table class="cmp">
+  <thead><tr>
+    <th data-sort="label" data-dir="asc"><button type="button" class="sort">Prueba</button></th>
+    {% for key, label, dir in [("vmaf_mean", "VMAF", "desc"), ("vmaf_p5", "p5", "desc"), ("vmaf_min", "mín.", "desc"), ("vmaf_neg_mean", "NEG", "desc"),
+                               ("psnr_y", "PSNR-Y", "desc"), ("ssim", "SSIM", "desc"), ("ms_ssim", "MS-SSIM", "desc"), ("ratio", "% orig.", "asc"),
+                               ("kbps", "kbps", "asc"), ("est_gb", "GB/cap.", "asc"), ("enc_fps", "fps", "desc"), ("est_hours", "t/cap.", "asc")] %}
+    <th data-sort="{{ key }}" data-dir="{{ dir }}"><button type="button" class="sort">{{ label }}</button> {{ info(key) }}</th>
+    {% endfor %}
+    <th>Estado</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for t in tests %}
+  <tr data-id="{{ t.id }}" class="status-{{ t.status }}">
+    <td data-v="{{ t.encoder }} {{ t.quality }} {{ t.preset }}">{{ chip(t) }} {{ t.quality }}·{{ t.preset }}</td>
+    {{ tcell(t, best, "vmaf_mean", 2) }}{{ tcell(t, best, "vmaf_p5", 2) }}{{ tcell(t, best, "vmaf_min", 2) }}{{ tcell(t, best, "vmaf_neg_mean", 2) }}
+    {{ tcell(t, best, "psnr_y", 2) }}{{ tcell(t, best, "ssim", 4) }}{{ tcell(t, best, "ms_ssim", 4) }}{{ tcell(t, best, "ratio", 1, 100) }}
+    {{ tcell(t, best, "kbps", 0) }}{{ tcell(t, best, "est_gb", 2) }}{{ tcell(t, best, "enc_fps", 0) }}{{ tcell(t, best, "est_hours", 1, time=true) }}
+    <td>{{ status_badge(t) }}</td>
+    <td>{% if t.ffmpeg_args %}<button type="button" class="copy" data-copy="{{ t.ffmpeg_args }}" title="Copiar argumentos">⧉</button>{% endif %}{% if t.status == "done" and thumbs_of(t.id) %} <a href="{{ url_for('comparar', escena=t.batch_id, a='orig', b=t.id) }}" title="Comparar con el original" aria-label="Comparar con el original">▨</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% macro batch_panel(b, tests, open, next) %}
+<details class="batch" id="b-{{ b.id }}"{% if open %} open{% endif %}>
+  <summary>
+    <span class="title">{{ b.source_path.rsplit('/', 1)[-1] }}</span>
+    <span class="meta">{{ b.start_s|hms }}–{{ (b.start_s + b.duration_s)|hms }} · {{ b.created_at }} · original {{ b.source_kbps|n(0) }} kbps · {{ tests|length }} prueba{{ "s" if tests|length != 1 }}</span>
+  </summary>
+  <div class="batch-actions">
+    <a href="{{ url_for('batch', batch_id=b.id) }}">Ver batería</a>
+    <a href="{{ url_for('results', escena=b.id) }}">Ver en el panel</a>
+    {% if b.group_id %}<a href="{{ url_for('group', group_id=b.group_id) }}">Resumen del grupo</a>{% endif %}
+    {{ delete_form(url_for('delete_batch', batch_id=b.id), "la batería entera (" ~ tests|length ~ (" prueba)" if tests|length == 1 else " pruebas)"), next) }}
+  </div>
+  <div class="rows">
+    <div class="row head"><span>Prueba</span><span>{{ glossary.vmaf_mean.name }} {{ info("vmaf_mean") }}</span><span>{{ glossary.ratio.name }} {{ info("ratio") }}</span><span></span></div>
+    {% for t in tests %}
+    <div class="row status-{{ t.status }}" id="r-{{ t.id }}">
+      <span>{{ chip(t) }} {{ t.quality }} · {{ t.preset }}{% if t.extra_args %} <code>{{ t.extra_args }}</code>{% endif %}</span>
+      {% if t.status == "done" %}
+      {{ bar("v", t.vmaf_mean, (t.vmaf_mean|n(1)) ~ " · p5 " ~ (t.vmaf_p5|n(1))) }}
+      {{ bar("s", t.ratio * 100 if t.ratio is not none else none, ((t.ratio * 100 if t.ratio is not none else none)|n(0)) ~ " % · " ~ (t.est_gb|n(2)) ~ " GB") }}
+      {% else %}
+      <span class="span2">{{ status_badge(t) }}{% if t.error %} <small class="errtext" title="{{ t.error }}">{{ t.error[:80] }}</small>{% endif %}</span>
+      {% endif %}
+      <span>{% if t.status != "running" %}{{ delete_form(url_for('delete_test', test_id=t.id), "esta prueba", next) }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {{ tests_table(tests, best_by_column(tests)) }}
+</details>
+{% endmacro %}
+
+{% macro chart_svg(c) %}
+<figure class="chart-wrap">
+  <div class="layers" role="group" aria-label="Capas del gráfico">
+    <button type="button" data-layer="umbral">Umbral</button>
+    <button type="button" data-layer="ganador"{% if not c.win %} disabled title="Ninguna prueba llega a {{ c.best.v }}"{% endif %}>Ganador</button>
+    <button type="button" data-layer="frontera">Frontera</button>
+    <button type="button" data-layer="curvas"{% if not c.curves %} disabled title="Hace falta un mismo encoder y preset con 2 o más calidades"{% endif %}>Curvas</button>
+  </div>
+  <svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" role="img" aria-label="VMAF frente a porcentaje del original, una marca por prueba">
+    <g class="l-umbral">
+      <rect class="band" x="{{ c.pad.l }}" y="{{ c.best.top }}" width="{{ c.w - c.pad.l - c.pad.r }}" height="{{ c.best.y - c.best.top }}"/>
+      <line class="thr" x1="{{ c.pad.l }}" x2="{{ c.w - c.pad.r }}" y1="{{ c.best.y }}" y2="{{ c.best.y }}"/>
+      <text class="thr-label" x="{{ c.w - c.pad.r - 4 }}" y="{{ c.best.y - 6 }}" text-anchor="end">bueno ≥ {{ c.best.v }}</text>
+      {% if c.warn %}<line class="thr warn" x1="{{ c.pad.l }}" x2="{{ c.w - c.pad.r }}" y1="{{ c.warn.y }}" y2="{{ c.warn.y }}"/>
+      <text class="thr-label warn" x="{{ c.w - c.pad.r - 4 }}" y="{{ c.warn.y - 6 }}" text-anchor="end">vigilar &lt; {{ c.warn.v }}</text>{% endif %}
+    </g>
+    {% for v, py in c.y_ticks %}<line class="grid" x1="{{ c.pad.l }}" x2="{{ c.w - c.pad.r }}" y1="{{ py }}" y2="{{ py }}"/><text class="tick" x="{{ c.pad.l - 8 }}" y="{{ py + 4 }}" text-anchor="end">{{ v }}</text>{% endfor %}
+    {% for v, px in c.x_ticks %}<text class="tick" x="{{ px }}" y="{{ c.h - c.pad.b + 18 }}" text-anchor="{{ 'start' if v == c.x_min else 'end' if loop.last else 'middle' }}">{{ v }} %</text>{% endfor %}
+    <line class="axis" x1="{{ c.pad.l }}" x2="{{ c.w - c.pad.r }}" y1="{{ c.h - c.pad.b }}" y2="{{ c.h - c.pad.b }}"/>
+    <text class="axis-label" x="{{ (c.w + c.pad.l) / 2 }}" y="{{ c.h - 4 }}" text-anchor="middle">% del original (menos = más ahorro)</text>
+    <text class="axis-label" x="12" y="{{ c.h / 2 }}" text-anchor="middle" transform="rotate(-90 12 {{ c.h / 2 }})">VMAF</text>
+    <path class="l-frontera frontier" d="{{ c.frontier }}"/>
+    <g class="l-curvas">
+      {% for cv in c.curves %}<polyline class="curve {{ cv.codec }}{{ ' qsv' if cv.qsv }}" points="{{ cv.points }}"/><text class="tick" x="{{ cv.lx }}" y="{{ cv.ly }}">{{ cv.label }}</text>{% endfor %}
+    </g>
+    {% for p in c.points %}
+    <g class="pt{{ ' front' if p.front }}" id="p-{{ p.id }}" tabindex="0" data-id="{{ p.id }}" data-label="{{ p.label }}" data-vmaf="{{ p.vmaf|n(2) }}" data-p5="{{ p.p5|n(2) }}" data-pct="{{ p.pct|n(1) }}" data-gb="{{ p.gb|n(2) }}">
+      <circle class="hit" cx="{{ p.cx }}" cy="{{ p.cy }}" r="12"/>
+      {% if p.win %}<circle class="l-ganador win-ring" cx="{{ p.cx }}" cy="{{ p.cy }}" r="12"/>{% endif %}
+      {% if p.engine == "qsv" %}<path class="mark {{ p.codec }}" d="M{{ p.cx }} {{ p.cy - 7 }}L{{ p.cx + 7 }} {{ p.cy }}L{{ p.cx }} {{ p.cy + 7 }}L{{ p.cx - 7 }} {{ p.cy }}Z"/>
+      {% else %}<circle class="mark {{ p.codec }}" cx="{{ p.cx }}" cy="{{ p.cy }}" r="6"/>{% endif %}
+    </g>
+    {% endfor %}
+    {% if c.win %}{% set left = c.win.cx > c.w / 2 %}
+    <text class="l-ganador win-label" x="{{ c.win.cx - 16 if left else c.win.cx + 16 }}" y="{{ c.win.cy - 14 }}" text-anchor="{{ 'end' if left else 'start' }}"><tspan>{{ saving(c.win.pct / 100) }}</tspan> {{ c.win.label|replace(' · ', ' ', 1)|replace(' · ', '·') }}</text>
+    {% endif %}
+  </svg>
+  <figcaption class="legend">
+    <span><i class="sw av1"></i>AV1</span><span><i class="sw hevc"></i>HEVC</span>
+    <span><i class="sh cpu"></i>CPU</span><span><i class="sh qsv"></i>QSV</span>
+    <span class="l-frontera"><i class="ln"></i>frontera (resto atenuado)</span>
+    <span class="l-curvas"><i class="ln dash"></i>curva QSV</span>
+  </figcaption>
+  <div class="chart-tip" hidden></div>
+</figure>
+{% endmacro %}
+
+{% macro pct(p) %}{{ ((p or 0) * 100)|round(1) }}{% endmacro %}
+
+{% macro progress_info(t) -%}
+{%- set p = t.progress or 0 -%}
+{%- set elapsed = (now - t.started_ts) if t.started_ts else none -%}
+{{ (p * 100)|n(0) }} %
+{%- if t.phase == "metrics" %} · midiendo VMAF{% elif t.frame %} · fotograma {{ t.frame }}{% if t.frames_total %} / {{ t.frames_total }}{% endif %}{% if elapsed %} · {{ (t.frame / elapsed)|n(0) }} fps{% endif %}{% endif -%}
+{%- if elapsed and p > 0 %} · quedan {{ (elapsed / p * (1 - p))|dur }}{% endif -%}
+{%- endmacro %}
+
+{% macro progress_block(t) %}
+{% set m = t.phase == "metrics" %}
+<div class="steps"><span class="{{ 'done' if m else 'now' }}">{{ '✓' if m else '●' }} Codificar</span><span class="{{ 'now' if m else '' }}">{{ '● ' if m else '' }}Medir VMAF</span><span>Guardar</span></div>
+<div class="bar progress" data-progress-for="{{ t.id }}"><i style="--w: {{ pct(t.progress) }}%"></i></div>
+<small class="pinfo" data-progress-info="{{ t.id }}">{{ progress_info(t) }}</small>
+{% endmacro %}
+
+{% macro queue_pill(q) %}
+{% set r = q.running[0] if q.running else none %}
+{% if q.pending %}
+<button type="button" class="qpill busy" popovertarget="queue" aria-label="Cola de pruebas">
+  <span class="dot"></span><span class="qtext">{{ q.running|length }} de {{ q.pending }}</span>
+  <span class="mini"><i style="--w: {{ pct(r.progress if r else 0) }}%"></i></span>
+  <span class="qpct">{{ ((r.progress if r else 0) * 100)|n(0) }} %</span><span class="caret">▾</span>
+</button>
+{% else %}
+<button type="button" class="qpill" popovertarget="queue" aria-label="Cola de pruebas">✓ Cola vacía</button>
+{% endif %}
+{% endmacro %}
+
+{% macro queue_list(q) %}
+<div id="queue" popover class="menu qmenu">
+  <h4>Cola</h4>
+  <div class="qrows">
+  {% for r in q.running %}
+  <div class="qrow" data-queue-id="{{ r.id }}"><span>{{ r.label }} <small>· {{ "midiendo VMAF" if r.phase == "metrics" else "codificando" }}</small></span>
+    <span class="mini"><i style="--w: {{ pct(r.progress) }}%"></i></span><b>{{ ((r.progress or 0) * 100)|n(0) }} %</b></div>
+  {% endfor %}
+  {% for r in q.queued %}
+  <div class="qrow" data-queue-id="{{ r.id }}"><span class="muted">{{ r.label }} <small>· en espera</small></span>
+    <span class="mini"><i style="--w: 0%"></i></span><b class="muted">—</b></div>
+  {% endfor %}
+  </div>
+  <p class="qfoot">{% if q.pending %}{% if q.eta_total_s is not none %}Estimado: {{ q.eta_total_s|dur }} para terminar la cola{% else %}Calculando el tiempo restante…{% endif %}{% else %}No hay pruebas en marcha.{% endif %}</p>
+</div>
+{% endmacro %}

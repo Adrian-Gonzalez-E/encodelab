@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Guía de métricas</h1>
+<p class="lead">Cómo leer cada cifra de EncodeLab. Los umbrales son orientativos para 1080p visto en una TV (modelo <code>vmaf_v0.6.1</code>).</p>
+<h2>Métricas de calidad</h2>
+<div class="guide">
+  {% for m in metrics %}
+  <article class="glass" id="{{ m.key }}">
+    <h3>{{ m.name }} <small>{{ m.range }} · {{ m.better }}</small></h3>
+    <p>{{ m.long }}</p>
+    {% if m.scale %}<ol class="scale">{% for start, label in m.scale %}<li><b>{% if loop.nextitem %}{{ start }}–{{ loop.nextitem[0] }}{% else %}≥ {{ start }}{% endif %}</b> {{ label }}</li>{% endfor %}</ol>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<h2>Cifras de tamaño y velocidad</h2>
+<div class="guide">
+  {% for m in fields %}
+  <article class="glass" id="{{ m.key }}"><h3>{{ m.name }} <small>{{ m.range }} · {{ m.better }}</small></h3><p>{{ m.long }}</p></article>
+  {% endfor %}
+</div>
+<h2>Avisos</h2>
+<div class="guide">
+  <article class="glass"><h3>Compara dentro de la misma escena</h3><p>VMAF depende del contenido: una escena oscura o con grano puntúa distinto que una limpia. Por eso el panel muestra una escena a la vez.</p></article>
+  <article class="glass"><h3>Film grain</h3><p>Con <code>film-grain=N</code> en SVT-AV1, el grano sintetizado no coincide píxel a píxel con el original y todas las métricas penalizan aunque a ojo se vea bien. Esas pruebas hay que juzgarlas viendo el capítulo.</p></article>
+  <article class="glass"><h3>El fotograma 0</h3><p>VMAF da unos 3 puntos menos en el primer fotograma aunque sea idéntico. Fíjate en el p5 antes que en el mínimo.</p></article>
+</div>
+{% endblock %}

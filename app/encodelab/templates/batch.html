@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_macros.html" import batch_panel, tests_toggle with context %}
+{% block live %} data-live{% endblock %}
+{% block scenebar %}{{ tests_toggle() }}{% endblock %}
+{% block main %}
+<h1>Batería {{ b.id }}</h1>
+<dl class="facts glass">
+  <dt>Fuente</dt><dd><code>{{ b.source_path }}</code></dd>
+  <dt>Original en el tramo</dt><dd>{{ b.source_kbps|n(0) }} kbps · {{ b.codec }} {{ b.width }}×{{ b.height }} · {{ b.fps|n(3) }} fps</dd>
+  <dt>ffmpeg</dt><dd>{{ b.ffmpeg_version }}</dd>
+</dl>
+{% if pending %}<p class="notice">Pruebas en marcha: la página se actualiza sola.</p>{% endif %}
+{{ batch_panel(b, tests, true, request.full_path.rstrip('?')) }}
+{% endblock %}

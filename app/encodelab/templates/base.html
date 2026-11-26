@@ -1,0 +1,117 @@
+{% from "_macros.html" import queue_pill, queue_list with context -%}
+<!doctype html>
+<html lang="es" data-view="{{ settings.default_view }}" data-tests="cards" data-layers="umbral ganador" data-refresh="{{ settings.refresh_s }}" data-bg="{{ settings.background }}"{% if not settings.animations %} class="no-motion"{% endif %}>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>try { var v = localStorage.getItem("encodelab.view"); if (v === "panel" || v === "baterias") document.documentElement.dataset.view = v;
+    var m = localStorage.getItem("encodelab.tests"); if (m === "cards" || m === "table") document.documentElement.dataset.tests = m;
+    var l = localStorage.getItem("encodelab.layers"); if (l !== null && /^[a-z ]*$/.test(l)) document.documentElement.dataset.layers = l; } catch (e) {}</script>
+  <title>EncodeLab</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <div class="bgfx" aria-hidden="true">
+    {% for x in [6, 15, 24, 33, 44, 53, 62, 71, 80, 89, 95] %}<i style="left: {{ x }}%; animation-delay: -{{ (loop.index * 1.7) % 12 }}s"></i>{% endfor %}
+    <svg class="waves" viewBox="0 0 1600 120" preserveAspectRatio="none"><path d="M0 60 Q100 20 200 60 T400 60 T600 60 T800 60 T1000 60 T1200 60 T1400 60 T1600 60"/><path d="M0 85 Q100 55 200 85 T400 85 T600 85 T800 85 T1000 85 T1200 85 T1400 85 T1600 85"/></svg>
+  </div>
+  {% set here = request.full_path.rstrip('?') %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('results') }}"><svg class="logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><circle class="track" cx="16" cy="16" r="13"/><circle class="arc" cx="16" cy="16" r="13" pathLength="100"/><path class="tri" d="M13 10.5 L22 16 L13 21.5 Z"/></svg><span><span class="e">E</span>ncodeLab</span></a>
+    <nav class="nav" aria-label="Zonas de la aplicación">
+      {% if request.endpoint == 'results' %}<button type="button" data-set-view="panel">Panel</button><button type="button" data-set-view="baterias">Baterías</button>
+      {% else %}<a href="{{ url_for('results', vista='panel') }}">Panel</a><a href="{{ url_for('results', vista='baterias') }}">Baterías</a>{% endif %}
+      {% if nav.group %}<a href="{{ url_for('groups') }}"{% if request.endpoint == 'group' %} aria-current="page"{% endif %}>Grupos</a>{% endif %}
+      {% if nav.compare %}<a href="{{ url_for('comparar', escena=nav.compare) }}"{% if request.endpoint == 'comparar' %} aria-current="page"{% endif %}>Comparar</a>{% endif %}
+      <a href="{{ url_for('metricas') }}"{% if request.endpoint == 'metricas' %} aria-current="page"{% endif %}>Métricas</a>
+    </nav>
+    {% block scenebar %}{% endblock %}
+    <div class="tools">
+      {{ queue_pill(queue) }}
+      <button type="button" class="btn plus" popovertarget="plus" aria-label="Añadir pruebas">＋ <span class="caret">▾</span></button>
+      {% block sortbutton %}{% endblock %}
+      <button type="button" class="ico" popovertarget="settings" title="Ajustes" aria-label="Ajustes">⚙</button>
+    </div>
+  </header>
+
+  {{ queue_list(queue) }}
+  <div id="plus" popover class="menu">
+    {% block plusitems %}{% endblock %}
+    <a href="{{ url_for('browse') }}">🎬 Nueva batería con otro archivo<small>elige un archivo de la biblioteca</small></a>
+  </div>
+  {% block popovers %}{% endblock %}
+
+  {# data-live: solo las páginas de resultados se refrescan enteras; en el resto solo se actualiza la píldora. #}
+  <main data-version="{{ queue.version }}"{% if queue.pending %} data-pending{% endif %}{% block live %}{% endblock %}>{% block main %}{% endblock %}</main>
+
+  <div id="settings" popover class="drawer">
+    <form method="post" action="{{ url_for('ajustes') }}" class="settings-form">
+      <header><h2>Ajustes</h2><button type="button" class="ico" popovertarget="settings" popovertargetaction="hide" aria-label="Cerrar">✕</button></header>
+      <input type="hidden" name="next" value="{{ here }}">
+      <h3>Por defecto en Nueva batería</h3>
+      <label>Duración del tramo (s) <input type="number" name="default_duration" value="{{ settings.default_duration }}" min="2" max="120" required></label>
+      <label>Inicio (% del capítulo) <input type="number" name="default_start_pct" value="{{ settings.default_start_pct }}" min="0" max="95" required></label>
+      <label>Encoder
+        <select name="default_encoder">{% for e in encoder_names %}<option value="{{ e }}"{% if e == settings.default_encoder %} selected{% endif %}>{{ e }}</option>{% endfor %}</select>
+      </label>
+      <details class="extras"><summary>Extras por encoder</summary>
+        {% for e in encoder_names %}<label><code>{{ e }}</code> <input type="text" name="extras_{{ e }}" value="{{ settings['extras_' ~ e] }}"></label>{% endfor %}
+      </details>
+      <h3>Resultados</h3>
+      <label>Aceptable desde (VMAF) <input type="number" name="vmaf_warn" value="{{ settings.vmaf_warn }}" min="0" max="99" required></label>
+      <label>Bueno desde (VMAF) <small>también «mejor ahorro»</small> <input type="number" name="best_vmaf" value="{{ settings.best_vmaf }}" min="50" max="100" required></label>
+      <label>Detalle de las pruebas
+        <select name="card_style">{% for v, label in [("grid", "Rejilla de cifras"), ("gauges", "Medidores por umbrales")] %}<option value="{{ v }}"{% if v == settings.card_style %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Vista inicial
+        <select name="default_view">{% for v, label in [("panel", "Panel"), ("baterias", "Baterías")] %}<option value="{{ v }}"{% if v == settings.default_view %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Refresco automático
+        <select name="refresh_s">{% for v, label in [("2", "cada 2 s"), ("5", "cada 5 s"), ("10", "cada 10 s"), ("0", "desactivado")] %}<option value="{{ v }}"{% if v == settings.refresh_s|string %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Fondo
+        <select name="background">{% for v, label in [("particulas", "Partículas"), ("aurora", "Aurora"), ("rejilla", "Rejilla técnica"), ("ondas", "Ondas de señal")] %}<option value="{{ v }}"{% if v == settings.background %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label class="check"><input type="checkbox" name="animations" value="1"{% if settings.animations %} checked{% endif %}> Animaciones</label>
+      <h3>Imágenes de comparación</h3>
+      <label class="check"><input type="checkbox" name="save_frames" value="1"{% if settings.save_frames %} checked{% endif %}> Guardar fotogramas de cada prueba</label>
+      <label>Fotogramas por escena <input type="number" name="frames_per_scene" value="{{ settings.frames_per_scene }}" min="1" max="6" required></label>
+      <label>Tope de disco (GB) <input type="number" name="frames_cap_gb" value="{{ settings.frames_cap_gb }}" min="1" max="50" required></label>
+      <label>Tramos en modo automático <input type="number" name="auto_tramos" value="{{ settings.auto_tramos }}" min="1" max="5" required></label>
+      <p class="hint">Ahora: {{ frames_usage[0] }} imágenes · {{ (frames_usage[1] / 1e6)|n(0) }} MB. Las nuevas pruebas dejan de guardarlas al llegar al tope.</p>
+      <h3>Sistema <small>(solo lectura)</small></h3>
+      <dl class="sysinfo">
+        <dt>ffmpeg</dt><dd>{{ system.ffmpeg }}</dd>
+        <dt>VMAF</dt><dd>{{ system.threads }} hilos</dd>
+        <dt>Límites</dt><dd>{{ system.cpus }} · {{ system.mem }}</dd>
+        <dt>Base de datos</dt><dd>{{ system.db_mb|n(1) }} MB</dd>
+      </dl>
+      <div class="actions"><button type="submit" class="btn">Guardar</button></div>
+    </form>
+    <form method="post" action="{{ url_for('clear_images') }}" class="del" data-confirm="¿Borrar todas las imágenes guardadas? Las pruebas se conservan, pero no podrás compararlas.">
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="ghost">Borrar todas las imágenes</button>
+    </form>
+  </div>
+
+  {% for key, m in glossary.items() %}
+  <div id="m-{{ key }}" popover class="metric-pop">
+    <h3>{{ m.name }} <small>{{ m.range }} · {{ m.better }}</small></h3>
+    <p>{{ m.short }}</p>
+    {% if m.scale %}
+    <ol class="scale">{% for start, label in m.scale %}<li><b>{% if loop.nextitem %}{{ start }}–{{ loop.nextitem[0] }}{% else %}≥ {{ start }}{% endif %}</b> {{ label }}</li>{% endfor %}</ol>
+    {% endif %}
+    <p class="more"><a href="{{ url_for('metricas') }}#{{ key }}">Más en la guía de métricas</a></p>
+  </div>
+  {% endfor %}
+
+  <dialog id="confirm">
+    <form method="dialog">
+      <p class="confirm-text"></p>
+      <div class="actions"><button value="cancel" class="ghost">Cancelar</button><button value="ok" class="danger">Borrar</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

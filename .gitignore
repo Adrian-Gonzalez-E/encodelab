@@ -1,0 +1,10 @@
+data/
+__pycache__/
+.pytest_cache/
+.superpowers/
+.env
+.env.*
+*.db
+*.db-*
+*.log
+compose.override.yaml
