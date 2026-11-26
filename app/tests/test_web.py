@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -929,3 +930,16 @@ def test_partial_qsv_offers_only_working_encoders(client, tmp_path):
     assert c.post("/batches", data={**VALID, "encoder": "av1_qsv", "presets": "slow"}).status_code == 400
     assert c.post("/batches", data={**VALID, "encoder": "hevc_qsv", "presets": "medium"}).status_code == 303
     assert "hevc_qsv (no: av1_qsv: Current resolution is unsupported)" in c.get("/").get_data(as_text=True)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignora los permisos")
+def test_unwritable_data_dir_gives_clear_error(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    data.chmod(0o555)
+    try:
+        with pytest.raises(RuntimeError, match=r"no se puede escribir en .*data.*mkdir"):
+            create_app({"MEDIA_ROOT": str(tmp_path), "DB_PATH": str(data / "t.db"), "WORK_DIR": str(tmp_path),
+                        "VMAF_THREADS": 1, "START_WORKER": False, "QSV_ENCODERS": []})
+    finally:
+        data.chmod(0o755)

@@ -3,6 +3,7 @@
 # Uso (en el host): app/e2e/run.sh [directorio de capturas]
 set -u
 cd "$(dirname "$0")/../.."
+export MEDIA_PATH=${MEDIA_PATH:-/tmp}  # el fixture no usa medios reales
 OUT=${1:-/tmp/encodelab-e2e}; mkdir -p "$OUT"; chmod 777 "$OUT"; rm -f "$OUT"/*.png
 docker rm -f encodelab-e2e >/dev/null 2>&1
 docker compose run -d --rm --no-deps --name encodelab-e2e encodelab python3 -m e2e.fixture_server >/dev/null 2>&1

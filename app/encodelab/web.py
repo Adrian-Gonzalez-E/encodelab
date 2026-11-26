@@ -562,6 +562,10 @@ def create_app(config: dict | None = None) -> Flask:
         pending = any(t["status"] in ("queued", "running") for t in tests)
         return render_template("batch.html", b=b, tests=tests, pending=pending)
 
+    data_dir = Path(app.config["DB_PATH"]).parent
+    if not os.access(data_dir, os.W_OK | os.X_OK):
+        raise RuntimeError(f"no se puede escribir en {data_dir} con uid {os.getuid()}: créalo antes de arrancar "
+                           f"(mkdir data) con dueño PUID:PGID")
     with closing(db.connect(app.config["DB_PATH"])) as c:
         db.reset_running(c)
         db.reset_running_analyses(c)

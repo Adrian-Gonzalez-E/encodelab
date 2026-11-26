@@ -1,0 +1,27 @@
+# encodelab: solo CPU. Para QSV (GPU Intel) añade compose.qsv.yaml:
+#   docker compose -f compose.yaml -f compose.qsv.yaml up -d
+# Configuración en .env (copia .env.example).
+services:
+  encodelab:
+    image: ghcr.io/adrian-gonzalez-e/encodelab:${ENCODELAB_TAG:-latest}
+    build: ./app
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - MEDIA_ROOT=/media
+      - DB_PATH=/data/encodelab.db
+      - WORK_DIR=/work
+      - VMAF_THREADS=${VMAF_THREADS:-}
+      - QSV_DEVICE=${QSV_DEVICE:-/dev/dri/renderD128}
+    volumes:
+      - ${DATA_PATH:-./data}:/data
+      - ${MEDIA_PATH:?define MEDIA_PATH en .env}:/media:ro
+    tmpfs:
+      - /work:size=512m,uid=${PUID:-1000},gid=${PGID:-1000},mode=0750
+    # Solo en local: la app no tiene login. Para acceso remoto, ponla tras un proxy con autenticación.
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+    # Límites opcionales (SVT-AV1 y libvmaf saturan la CPU):
+    # cpus: 4
+    # mem_limit: 4g

@@ -1,0 +1,8 @@
+# Override para Intel QSV. RENDER_GID: `getent group render | cut -d: -f3` en el host.
+# Con varias GPU, QSV_DEVICE elige el nodo (ls -l /dev/dri/by-path/).
+services:
+  encodelab:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:?define RENDER_GID en .env (getent group render)}"

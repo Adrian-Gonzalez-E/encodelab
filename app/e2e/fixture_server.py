@@ -129,7 +129,7 @@ if __name__ == "__main__":
         (MEDIA_ROOT / rel).touch()
     media.probe_source = lambda src: dict(INFO)
     media.segment_kbps = lambda src, start, dur: 4500.0
-    app = create_app({"DB_PATH": DB_PATH, "MEDIA_ROOT": str(MEDIA_ROOT), "WORK_DIR": "/tmp", "START_WORKER": False,
+    app = create_app({"DB_PATH": DB_PATH, "MEDIA_ROOT": str(MEDIA_ROOT), "WORK_DIR": "/tmp", "START_WORKER": False, "QSV_ENCODERS": ["av1_qsv", "hevc_qsv"], "QSV_REASON": "ok",
                       "FRAMES_DIR": str(FRAMES_DIR)})
     seed_images(db.connect(DB_PATH))
     # Después de create_app: su reset_running devolvería a la cola la prueba "en curso".
