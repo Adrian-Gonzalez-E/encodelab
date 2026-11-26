@@ -2,6 +2,7 @@
 import itertools
 import json
 import math
+import os
 import re
 import shlex
 import statistics
@@ -27,7 +28,50 @@ BAD_PARAM_RE = re.compile(r"Error parsing option|Unknown option|Invalid value fo
 PROTOCOL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 # Van antes de -i: los encoders QSV reciben fotogramas en memoria de sistema y los suben a la GPU.
-QSV_ARGS = ["-init_hw_device", "qsv=hw:/dev/dri/renderD128", "-filter_hw_device", "hw"]
+QSV_DEVICE = os.environ.get("QSV_DEVICE", "/dev/dri/renderD128")
+
+
+def qsv_args(device: str) -> list[str]:
+    # QSV derivado de VAAPI: con varias GPU, qsv=hw:<nodo> ignora el nodo y usa el primer adaptador.
+    return ["-init_hw_device", f"vaapi=va:{device}", "-init_hw_device", "qsv=hw@va", "-filter_hw_device", "hw"]
+
+
+QSV_ARGS = qsv_args(QSV_DEVICE)
+
+
+def _qsv_try(device: str, encoder: str) -> str | None:
+    """None si `encoder` codifica 1 fotograma en `device`; si no, el motivo."""
+    cmd = ["ffmpeg", "-hide_banner", "-nostdin", *qsv_args(device), "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.04",
+           "-frames:v", "1", "-c:v", encoder, "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        return "ffmpeg no respondió en 15 s"
+    except OSError as e:
+        return str(e)
+    if r.returncode == 0:
+        return None
+    lines = [line for line in r.stderr.splitlines() if line.strip()]
+    return lines[-1] if lines else f"ffmpeg salió con código {r.returncode}"
+
+
+def detect_qsv(device: str = QSV_DEVICE) -> tuple[list[str], str]:
+    """Encoders QSV que funcionan en `device` y un resumen legible ("ok" o los motivos de los que no)."""
+    if not Path(device).exists():
+        return [], f"sin dispositivo {device}"
+    ok, failed = [], []
+    for name in (n for n, e in ENCODERS.items() if e["qsv"]):
+        reason = _qsv_try(device, name)
+        if reason is None:
+            ok.append(name)
+        else:
+            failed.append(f"{name}: {reason}")
+    return ok, "ok" if not failed else "; ".join(failed)
+
+
+def available_encoders(qsv: list[str]) -> list[str]:
+    return [name for name, enc in ENCODERS.items() if not enc["qsv"] or name in qsv]
+
 
 # Una pasada de libvmaf: VMAF, VMAF NEG, PSNR, SSIM y MS-SSIM. Entradas: [distorsionada][referencia].
 VMAF_FILTER = (

@@ -1,10 +1,9 @@
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from encodelab.media import QSV_ARGS, VMAF_FILTER
+from encodelab.media import QSV_ARGS, VMAF_FILTER, detect_qsv
 
 
 def run(cmd):
@@ -29,7 +28,7 @@ def test_vmaf_filter_produces_all_metrics(tmp_path):
     assert sum(f["metrics"]["vmaf"] for f in frames) / len(frames) > 99
 
 
-@pytest.mark.skipif(not Path("/dev/dri/renderD128").exists(), reason="sin GPU Intel")
+@pytest.mark.skipif("av1_qsv" not in detect_qsv()[0], reason="sin AV1 por QSV")
 def test_qsv_av1_encodes(tmp_path):
     run(["ffmpeg", "-hide_banner", *QSV_ARGS, "-f", "lavfi", "-i", "testsrc2=s=1280x720:d=1",
          "-c:v", "av1_qsv", "-global_quality", "30", str(tmp_path / "o.mkv")])

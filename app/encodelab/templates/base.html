@@ -54,7 +54,7 @@
       <label>Duración del tramo (s) <input type="number" name="default_duration" value="{{ settings.default_duration }}" min="2" max="120" required></label>
       <label>Inicio (% del capítulo) <input type="number" name="default_start_pct" value="{{ settings.default_start_pct }}" min="0" max="95" required></label>
       <label>Encoder
-        <select name="default_encoder">{% for e in encoder_names %}<option value="{{ e }}"{% if e == settings.default_encoder %} selected{% endif %}>{{ e }}</option>{% endfor %}</select>
+        <select name="default_encoder">{% for e in encoders_available %}<option value="{{ e }}"{% if e == settings.default_encoder %} selected{% endif %}>{{ e }}</option>{% endfor %}</select>
       </label>
       <details class="extras"><summary>Extras por encoder</summary>
         {% for e in encoder_names %}<label><code>{{ e }}</code> <input type="text" name="extras_{{ e }}" value="{{ settings['extras_' ~ e] }}"></label>{% endfor %}
@@ -85,6 +85,7 @@
       <dl class="sysinfo">
         <dt>ffmpeg</dt><dd>{{ system.ffmpeg }}</dd>
         <dt>VMAF</dt><dd>{{ system.threads }} hilos</dd>
+        <dt>QSV</dt><dd>{{ system.qsv }}</dd>
         <dt>Límites</dt><dd>{{ system.cpus }} · {{ system.mem }}</dd>
         <dt>Base de datos</dt><dd>{{ system.db_mb|n(1) }} MB</dd>
       </dl>

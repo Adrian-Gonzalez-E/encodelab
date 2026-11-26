@@ -29,9 +29,20 @@ def client(tmp_path, info):
     (tmp_path / "s").mkdir()
     (tmp_path / "s" / "e01.mkv").touch()
     (tmp_path / "s" / "notas.txt").touch()
+    return make_client(tmp_path, True)
+
+
+def make_client(tmp_path, qsv_ok):
     app = create_app({"MEDIA_ROOT": str(tmp_path), "DB_PATH": str(tmp_path / "t.db"), "WORK_DIR": str(tmp_path),
-                      "VMAF_THREADS": 1, "START_WORKER": False})
+                      "VMAF_THREADS": 1, "START_WORKER": False,
+                      "QSV_ENCODERS": ["av1_qsv", "hevc_qsv"] if qsv_ok else [],
+                      "QSV_REASON": "ok" if qsv_ok else "sin dispositivo /dev/dri/renderD128"})
     return app.test_client()
+
+
+@pytest.fixture
+def client_noqsv(client, tmp_path):
+    return make_client(tmp_path, False)  # misma base de datos y medios que client
 
 
 def test_new_rejects_traversal(client):
@@ -870,3 +881,51 @@ def test_compare_and_group_pickers(client, tmp_path):
 
 def test_groups_without_data_is_404(client):
     assert client.get("/grupos").status_code == 404
+
+
+def test_new_hides_qsv_without_device(client_noqsv):
+    html = client_noqsv.get("/new?file=s/e01.mkv").get_data(as_text=True)
+    form = html.split('name="encoder"', 1)[1].split("Argumentos extra", 1)[0]  # select y fichas de la batería
+    assert "av1_qsv" not in form and "hevc_qsv" not in form and "libsvtav1" in form
+    assert 'data-enc-info="hevc_qsv"' not in html
+
+
+def test_new_falls_back_when_default_is_qsv(client_noqsv):
+    assert client_noqsv.post("/ajustes", data={**SETTINGS_OK, "default_encoder": "av1_qsv"}).status_code == 303
+    html = client_noqsv.get("/new?file=s/e01.mkv").get_data(as_text=True)
+    assert 'value="libsvtav1" selected' in html
+
+
+def test_post_batch_rejects_qsv_without_device(client_noqsv):
+    r = client_noqsv.post("/batches", data={**VALID, "encoder": "hevc_qsv", "presets": "medium"})
+    assert r.status_code == 400 and "QSV no disponible" in r.get_data(as_text=True)
+
+
+def test_old_qsv_results_still_render(client, client_noqsv):
+    r = client.post("/batches", data={**VALID, "encoder": "hevc_qsv", "presets": "medium"})
+    batch_id = int(r.headers["Location"].rsplit("/", 1)[-1])
+    conn = db.connect(client.application.config["DB_PATH"])
+    db.finish_test(conn, db.batch_tests(conn, batch_id)[0]["id"], {"kbps": 4000.0, "vmaf_mean": 95.0, "vmaf_p5": 92.0,
+                                                                    "enc_fps": 30.0})
+    for url in ("/", f"/batches/{batch_id}"):
+        resp = client_noqsv.get(url)
+        assert resp.status_code == 200 and "hevc_qsv" in resp.get_data(as_text=True), url
+
+
+def test_settings_panel_shows_qsv_state(client, client_noqsv):
+    assert "QSV" in client.get("/").get_data(as_text=True)
+    assert "no disponible: sin dispositivo" in client_noqsv.get("/").get_data(as_text=True)
+    sel = client_noqsv.get("/").get_data(as_text=True).split('name="default_encoder"', 1)[1].split("</select>", 1)[0]
+    assert "av1_qsv" not in sel
+
+
+def test_partial_qsv_offers_only_working_encoders(client, tmp_path):
+    app = create_app({"MEDIA_ROOT": str(tmp_path), "DB_PATH": str(tmp_path / "t.db"), "WORK_DIR": str(tmp_path),
+                      "VMAF_THREADS": 1, "START_WORKER": False, "QSV_ENCODERS": ["hevc_qsv"],
+                      "QSV_REASON": "av1_qsv: Current resolution is unsupported"})
+    c = app.test_client()
+    form = c.get("/new?file=s/e01.mkv").get_data(as_text=True).split('name="encoder"', 1)[1].split("Argumentos extra", 1)[0]
+    assert "hevc_qsv" in form and "av1_qsv" not in form
+    assert c.post("/batches", data={**VALID, "encoder": "av1_qsv", "presets": "slow"}).status_code == 400
+    assert c.post("/batches", data={**VALID, "encoder": "hevc_qsv", "presets": "medium"}).status_code == 303
+    assert "hevc_qsv (no: av1_qsv: Current resolution is unsupported)" in c.get("/").get_data(as_text=True)

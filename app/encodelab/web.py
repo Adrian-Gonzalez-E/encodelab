@@ -110,7 +110,7 @@ def _cgroup(name: str) -> str | None:
         return None
 
 
-def system_info(db_path: str, threads: int) -> dict:
+def system_info(db_path: str, threads: int, qsv: str = "") -> dict:
     """Datos de solo lectura del panel de ajustes."""
     cpu = _cgroup("cpu.max")  # "600000 100000" = 6 CPU; "max 100000" = sin límite
     mem = _cgroup("memory.max")
@@ -122,7 +122,7 @@ def system_info(db_path: str, threads: int) -> dict:
     return {"ffmpeg": _ffmpeg_version().split(" Copyright")[0], "threads": threads,
             "cpus": f"{int(quota) / int(period):g} CPU" if quota.isdigit() and period.isdigit() else "sin límite",
             "mem": f"{int(mem) / 2**30:g} GiB" if mem and mem.isdigit() else "sin límite",
-            "db_mb": size_mb}
+            "db_mb": size_mb, "qsv": qsv}
 
 
 BEST_MAX = ("vmaf_mean", "vmaf_p5", "vmaf_min", "vmaf_neg_mean", "psnr_y", "ssim", "ms_ssim", "enc_fps")
@@ -199,8 +199,15 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.update(MEDIA_ROOT=os.environ.get("MEDIA_ROOT", "/media"),
                       DB_PATH=os.environ.get("DB_PATH", "/data/encodelab.db"),
                       WORK_DIR=os.environ.get("WORK_DIR", "/work"),
-                      VMAF_THREADS=int(os.environ.get("VMAF_THREADS", "6")), START_WORKER=True)
+                      VMAF_THREADS=int(os.environ.get("VMAF_THREADS") or os.cpu_count() or 1), START_WORKER=True)
     app.config.update(config or {})
+    if "QSV_ENCODERS" not in app.config:
+        app.config["QSV_ENCODERS"], app.config["QSV_REASON"] = media.detect_qsv()
+        log.info("QSV: %s", app.config["QSV_REASON"])
+    available = media.available_encoders(app.config["QSV_ENCODERS"])
+    qsv_ok, qsv_reason = app.config["QSV_ENCODERS"], app.config.get("QSV_REASON", "")
+    qsv_state = (f"no disponible: {qsv_reason}" if not qsv_ok else
+                 ", ".join(qsv_ok) + ("" if qsv_reason == "ok" else f" (no: {qsv_reason})"))
     root = Path(app.config["MEDIA_ROOT"]).resolve()
     frames_root = Path(app.config.get("FRAMES_DIR") or Path(app.config["DB_PATH"]).parent / "frames").resolve()
     try:
@@ -237,8 +244,8 @@ def create_app(config: dict | None = None) -> Flask:
         prefs = settings.load(c)
         return {"glossary": glossary.with_thresholds(prefs["vmaf_warn"], prefs["best_vmaf"]), "settings": prefs,
                 "queue": db.queue_state(c, time.time()),
-                "now": time.time(), "encoder_names": list(media.ENCODERS), "frames_usage": db.frames_usage(c), "nav": db.nav_targets(c),
-                "system": system_info(app.config["DB_PATH"], app.config["VMAF_THREADS"])}
+                "now": time.time(), "encoder_names": list(media.ENCODERS), "encoders_available": available, "frames_usage": db.frames_usage(c), "nav": db.nav_targets(c),
+                "system": system_info(app.config["DB_PATH"], app.config["VMAF_THREADS"], qsv_state)}
 
     app.jinja_env.globals["best_by_column"] = best_by_column
     app.jinja_env.globals["thumbs_of"] = lambda test_id: db.test_frames(conn(), test_id)
@@ -386,6 +393,8 @@ def create_app(config: dict | None = None) -> Flask:
         info = media.probe_source(src)
         c = conn()
         prefs = settings.load(c)
+        if prefs["default_encoder"] not in available:  # p. ej. QSV guardado y este equipo sin QSV
+            prefs = {**prefs, "default_encoder": available[0]}
         # start/duration llegan de "Añadir pruebas a esta escena"; si no valen, mandan los ajustes.
         duration = _maybe_time(request.args.get("duration"))
         if duration is None or not 2 <= duration <= 120:
@@ -397,7 +406,7 @@ def create_app(config: dict | None = None) -> Flask:
         key = (rel_of(src), start, duration)
         same = sum(s["n_tests"] for s in db.list_scenes(c) if (s["source_path"], s["start_s"], s["duration_s"]) == key)
         return render_template("new.html", file=rel_of(src), info=info, start=start, duration=duration,
-                               kbps=media.segment_kbps(src, start, duration), encoders=glossary.ENCODER_INFO,
+                               kbps=media.segment_kbps(src, start, duration), encoders={k: v for k, v in glossary.ENCODER_INFO.items() if k in available},
                                prefs=prefs, speeds=db.speed_history(c), frames=round(duration * info["fps"]),
                                same_scene_tests=same)
 
@@ -415,6 +424,8 @@ def create_app(config: dict | None = None) -> Flask:
         encoder = form.get("encoder", "")
         if encoder not in media.ENCODERS:
             raise ValueError(f"Encoder no admitido: {encoder}")
+        if encoder not in available:
+            raise ValueError(f"QSV no disponible en este equipo para {encoder}: {qsv_reason}")
         extra = form.get("extra", "").strip()
         media.parse_extra_args(extra)
         matrix = media.expand_matrix(form.get("qualities", ""), form.get("presets", ""))

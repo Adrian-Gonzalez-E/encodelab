@@ -1,6 +1,9 @@
+import subprocess
 from pathlib import Path
 
 import pytest
+
+from encodelab import media
 
 from encodelab.media import (codec_args, encode_cmd, expand_matrix, metrics_cmd, parse_extra_args,
                              parse_probe, safe_media_path, summarize_vmaf)
@@ -82,3 +85,43 @@ def test_parse_probe_interlaced():
     assert parse_probe(d)["interlaced"] is False
     del d["streams"][0]["field_order"]
     assert parse_probe(d)["interlaced"] is False
+
+
+def test_detect_qsv_without_device(tmp_path):
+    assert media.detect_qsv(str(tmp_path / "nope")) == ([], f"sin dispositivo {tmp_path / 'nope'}")
+
+
+def test_detect_qsv_ffmpeg_fails(tmp_path, monkeypatch):
+    dev = tmp_path / "renderD128"
+    dev.touch()
+    monkeypatch.setattr(media.subprocess, "run",
+                        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", "x\nPermission denied\n"))
+    assert media.detect_qsv(str(dev)) == ([], "av1_qsv: Permission denied; hevc_qsv: Permission denied")
+
+
+def test_detect_qsv_ok_and_partial(tmp_path, monkeypatch):
+    dev = tmp_path / "renderD129"
+    dev.touch()
+    seen = []
+    def fake(cmd, **kw):
+        seen.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 1 if "av1_qsv" in cmd else 0, "", "Current resolution is unsupported")
+    monkeypatch.setattr(media.subprocess, "run", fake)
+    assert media.detect_qsv(str(dev)) == (["hevc_qsv"], "av1_qsv: Current resolution is unsupported")
+    cmd, kw = seen[0]
+    assert f"vaapi=va:{dev}" in cmd and "qsv=hw@va" in cmd and kw.get("timeout") == 15
+
+
+def test_detect_qsv_timeout(tmp_path, monkeypatch):
+    dev = tmp_path / "renderD128"
+    dev.touch()
+    def boom(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 15)
+    monkeypatch.setattr(media.subprocess, "run", boom)
+    ok, reason = media.detect_qsv(str(dev))
+    assert ok == [] and "15 s" in reason
+
+
+def test_available_encoders():
+    assert media.available_encoders([]) == ["libsvtav1", "libx265"]
+    assert media.available_encoders(["hevc_qsv"]) == ["libsvtav1", "libx265", "hevc_qsv"]
